@@ -1,0 +1,691 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>FP Web‑Swing Prototype — Pause & Tuning</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<style>
+  html,body{height:100%;margin:0;background:#89c7ff;overflow:hidden;font-family:Inter,Arial,sans-serif}
+  #overlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:120}
+  #panel{background:rgba(6,12,30,0.92);color:#eaf6ff;padding:18px;border-radius:12px;width:760px;box-shadow:0 20px 60px rgba(0,0,0,0.6)}
+  #panel h1{margin:0 0 8px;font-size:20px}
+  #panel p{margin:6px 0 12px;color:#cfeeff}
+  button{background:#7fd3ff;border:none;padding:10px 14px;border-radius:8px;font-weight:700;cursor:pointer}
+  .smallBtn{background:#4a6b8c;color:#fff;padding:8px 10px;border-radius:8px;border:none;cursor:pointer}
+  .diffBtn{padding:8px 12px;border-radius:8px;border:none;cursor:pointer;background:#2f8bd0;color:#fff;font-weight:700}
+  .diffBtn.active{outline:3px solid rgba(255,220,120,0.12); box-shadow:0 8px 28px rgba(0,0,0,0.45); background:#fab54d;color:#0a0a0a}
+  #hud{position:fixed;left:14px;top:14px;z-index:90;color:#fff;display:flex;flex-direction:column;gap:8px}
+  .bar{display:inline-block;background:rgba(255,255,255,0.08);height:12px;width:200px;border-radius:8px;overflow:hidden;margin-left:8px;vertical-align:middle}
+  .fill{height:100%;background:linear-gradient(90deg,#bafff7,#4fd1ff);width:100%;transition:width 150ms linear}
+  #info{position:fixed;right:14px;top:14px;color:#fff;z-index:90}
+  #cross{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);width:18px;height:18px;z-index:90;pointer-events:none}
+  #cross:before,#cross:after{content:'';position:absolute;background:rgba(255,255,255,0.9)}
+  #cross:before{left:50%;top:0;width:2px;height:18px;transform:translateX(-50%)}
+  #cross:after{top:50%;left:0;height:2px;width:18px;transform:translateY(-50%)}
+  #tips{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);color:#fff;z-index:90;background:rgba(0,0,0,0.35);padding:8px 12px;border-radius:8px}
+  #canvasContainer{width:100vw;height:100vh}
+  /* Subtitles */
+  #subtitle { position: fixed; left: 50%; bottom: 8vh; transform: translateX(-50%); z-index: 110; max-width: 82vw; background: rgba(0, 0, 0, 0.58); color: #fff; padding: 10px 16px; border-radius: 10px; font-size: 18px; text-align: center; line-height: 1.3; box-shadow: 0 8px 24px rgba(0,0,0,0.45); opacity: 0; transition: opacity 260ms ease, transform 260ms ease; pointer-events: none; }
+  #subtitle.show { opacity: 1; transform: translateX(-50%) translateY(-6px); }
+  #subtitle .meta { display:block; font-size:12px; opacity:0.85; margin-top:6px; color:#cfeeff; }
+  .subtitleToggle { margin-left:10px; padding:6px 8px; background:rgba(255,255,255,0.06); color:#fff; border-radius:6px; border:1px solid rgba(255,255,255,0.04); cursor:pointer; }
+  /* pause menu */
+  #pauseMenu{position:fixed;inset:0;display:none;align-items:center;justify-content:center;z-index:200}
+  #pauseCard{width:880px;max-width:94%;background:rgba(3,6,18,0.92);color:#eaf6ff;border-radius:12px;padding:18px;box-shadow:0 24px 80px rgba(0,0,0,0.7);display:grid;grid-template-columns:1fr 360px;gap:16px}
+  .tuningRow{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+  input[type="range"]{width:100%}
+  .badge{padding:6px 10px;border-radius:8px;font-weight:700}
+  .badge.easy{background:#7bd88f;color:#04270d}
+  .badge.normal{background:#ffd86a;color:#2b1800}
+  .badge.hard{background:#ff9a6a;color:#3b0b00}
+  .badge.extreme{background:#ff6a6a;color:#2b0000}
+</style>
+</head>
+<body>
+
+<!-- Intro overlay -->
+<div id="overlay">
+  <div id="panel">
+    <h1>Water Man — FP Web‑Swing (Choose Difficulty)</h1>
+    <p>Pick a difficulty, then press Play. After starting, press Esc to open the pause menu and change difficulty or tune parameters mid-game.</p>
+
+    <div style="display:flex;gap:10px;margin-bottom:12px">
+      <button class="diffBtn" id="diffEasy">Easy</button>
+      <button class="diffBtn active" id="diffNormal">Normal</button>
+      <button class="diffBtn" id="diffHard">Hard</button>
+      <button class="diffBtn" id="diffXtreme">Extreme</button>
+      <div style="flex:1"></div>
+      <button id="subtitleToggle" class="smallBtn">Subtitles: ON</button>
+    </div>
+
+    <div style="display:flex;gap:10px;align-items:center">
+      <button id="playBtn">Play — Start (music on)</button>
+      <button id="playNoMusic" class="smallBtn">Play (no music)</button>
+      <div style="flex:1"></div>
+      <small style="color:#cde">Desktop recommended. Click to allow pointer lock.</small>
+    </div>
+
+    <div style="margin-top:12px;color:#dfe">
+      <strong>Quick tips:</strong>
+      <ul style="margin:6px 0 0 18px">
+        <li>Left click: shoot web; hold to swing; release to launch</li>
+        <li>WASD + mouse, Space to jump, Shift to sprint, Esc to pause</li>
+        <li>Change difficulty mid-game in the Pause menu (Esc)</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- Pause menu (hidden until Esc) -->
+<div id="pauseMenu">
+  <div id="pauseCard">
+    <div>
+      <h2 style="margin:0 0 8px">Pause & Settings</h2>
+      <p style="margin:0 0 12px">Adjust difficulty or tune parameters and press Apply. Changes take effect immediately.</p>
+
+      <div style="display:flex;gap:8px;margin-bottom:12px">
+        <button class="diffBtn" id="pDiffEasy">Easy</button>
+        <button class="diffBtn" id="pDiffNormal">Normal</button>
+        <button class="diffBtn" id="pDiffHard">Hard</button>
+        <button class="diffBtn" id="pDiffXtreme">Extreme</button>
+      </div>
+
+      <div style="margin-bottom:10px"><strong>Tuning</strong></div>
+
+      <div class="tuningRow">
+        <label style="width:110px">Drone Count</label>
+        <input id="tDroneCount" type="range" min="0" max="30" value="6">
+        <input id="tDroneCountVal" style="width:58px" type="number" min="0" max="30" value="6">
+      </div>
+
+      <div class="tuningRow">
+        <label style="width:110px">Proj Damage</label>
+        <input id="tProjDmg" type="range" min="1" max="40" value="8">
+        <input id="tProjDmgVal" style="width:58px" type="number" min="1" max="40" value="8">
+      </div>
+
+      <div class="tuningRow">
+        <label style="width:110px">Attach Range</label>
+        <input id="tAttachRange" type="range" min="20" max="80" value="45">
+        <input id="tAttachRangeVal" style="width:58px" type="number" min="20" max="80" value="45">
+      </div>
+
+      <div class="tuningRow">
+        <label style="width:110px">Player HP</label>
+        <input id="tPlayerHP" type="range" min="40" max="220" value="100">
+        <input id="tPlayerHPVal" style="width:58px" type="number" min="40" max="220" value="100">
+      </div>
+
+      <div class="tuningRow">
+        <label style="width:110px">Energy Regen</label>
+        <input id="tEnergyRegen" type="range" min="0.3" max="2.0" step="0.05" value="1.0">
+        <input id="tEnergyRegenVal" style="width:58px" type="number" min="0.3" max="2.0" step="0.05" value="1.0">
+      </div>
+
+      <div style="display:flex;gap:8px;margin-top:12px">
+        <button id="applyTuning">Apply</button>
+        <button id="resumeBtn" class="smallBtn">Resume</button>
+        <button id="restartBtn" class="smallBtn">Restart</button>
+      </div>
+
+    </div>
+
+    <div>
+      <div style="display:flex;align-items:center;gap:10px;justify-content:space-between">
+        <div>
+          <div>Current Difficulty</div>
+          <div id="hudBadge" class="badge normal" style="margin-top:8px">Normal</div>
+        </div>
+        <div style="text-align:right">
+          <div style="color:#cfe">Controls</div>
+          <div style="margin-top:8px;font-size:13px;color:#dfe">Esc: Resume • 1–4: Diff • Apply: Apply tuning</div>
+        </div>
+      </div>
+
+      <div style="margin-top:18px;">
+        <strong>Subtitle log</strong>
+        <div id="subtitleLog" style="margin-top:8px;max-height:220px;overflow:auto;background:rgba(255,255,255,0.02);padding:8px;border-radius:8px;color:#dfe;font-size:13px"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="hud">
+  <div>❤️ HP <div class="bar"><div id="hpFill" class="fill" style="width:100%"></div></div></div>
+  <div style="margin-top:6px">⚡ Energy <div class="bar"><div id="enFill" class="fill" style="width:100%"></div></div></div>
+  <div style="margin-top:6px;display:flex;gap:8px;align-items:center">⭐ Score <span id="score">0</span> <span id="hudDiffBadge" class="badge normal" style="margin-left:10px;padding:4px 8px;font-size:12px">Normal</span></div>
+</div>
+
+<div id="info">
+  <div>Attach range: <span id="rangeLabel">45m</span></div>
+  <div style="margin-top:6px">R: Restart • Esc: Pause/Resume • T: toggle subtitles</div>
+</div>
+
+<div id="cross"></div>
+<div id="tips">Left click: shoot web • Hold to swing • Space: jump • Shift: sprint</div>
+<div id="canvasContainer"></div>
+
+<div id="subtitle" aria-live="polite" role="status"></div>
+
+<script src="https://unpkg.com/three@0.150.0/build/three.min.js"></script>
+
+<script>
+/* ========= Full prototype with pause menu, tuning, and HUD badge ========= */
+
+/* ---------- Difficulty presets ---------- */
+const DIFFICULTIES = {
+  Easy: { name:'Easy', playerHP:140, playerEnergy:120, energyRegenMultiplier:1.5, droneCount:3, droneShootInterval:[3.0,4.5], projectileDamage:5, enemyHpMultiplier:0.7, attachRange:50 },
+  Normal: { name:'Normal', playerHP:100, playerEnergy:100, energyRegenMultiplier:1.0, droneCount:6, droneShootInterval:[1.5,3.5], projectileDamage:8, enemyHpMultiplier:1.0, attachRange:45 },
+  Hard: { name:'Hard', playerHP:80, playerEnergy:90, energyRegenMultiplier:0.75, droneCount:9, droneShootInterval:[1.0,2.5], projectileDamage:12, enemyHpMultiplier:1.4, attachRange:40 },
+  Extreme: { name:'Extreme', playerHP:60, playerEnergy:80, energyRegenMultiplier:0.5, droneCount:12, droneShootInterval:[0.6,1.8], projectileDamage:16, enemyHpMultiplier:1.8, attachRange:36 }
+};
+let chosenDifficulty = DIFFICULTIES.Normal;
+
+/* ---------- Subtitle system (with small log) ---------- */
+const subtitleEl = document.getElementById('subtitle');
+const subtitleLog = document.getElementById('subtitleLog');
+let subtitlesEnabled = true;
+let subtitleQueue = [];
+let subtitleShowing = false;
+let subtitleTimer = null;
+
+function showSubtitle(text, duration = 3000, meta = '') {
+  // append to log
+  const when = new Date().toLocaleTimeString();
+  subtitleLog.insertAdjacentHTML('afterbegin', `<div style="margin-bottom:6px"><strong>[${when}]</strong> ${escapeHtml(text)}</div>`);
+  if (!subtitlesEnabled) return;
+  subtitleQueue.push({text, duration, meta});
+  if (!subtitleShowing) processSubtitleQueue();
+}
+
+function processSubtitleQueue() {
+  if (subtitleQueue.length === 0) { subtitleShowing = false; subtitleEl.classList.remove('show'); return; }
+  subtitleShowing = true;
+  const item = subtitleQueue.shift();
+  subtitleEl.innerHTML = escapeHtml(item.text) + (item.meta ? '<span class="meta">' + escapeHtml(item.meta) + '</span>' : '');
+  subtitleEl.classList.add('show');
+  clearTimeout(subtitleTimer);
+  subtitleTimer = setTimeout(() => { subtitleEl.classList.remove('show'); setTimeout(processSubtitleQueue, 260); }, item.duration);
+}
+
+function clearSubtitles() { subtitleQueue=[]; subtitleShowing=false; clearTimeout(subtitleTimer); subtitleEl.classList.remove('show'); subtitleEl.innerHTML=''; }
+function toggleSubtitles(){ subtitlesEnabled = !subtitlesEnabled; document.getElementById('subtitleToggle').textContent = 'Subtitles: ' + (subtitlesEnabled ? 'ON':'OFF'); if(!subtitlesEnabled) clearSubtitles(); }
+function escapeHtml(str){ return String(str).replace(/[&<>"']/g, function (m) { return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[m]; }); }
+document.getElementById('subtitleToggle').addEventListener('click', toggleSubtitles);
+window.addEventListener('keydown', e => { if(e.key.toLowerCase() === 't') toggleSubtitles(); });
+
+/* ---------- Core prototype variables ---------- */
+let renderer, scene, camera;
+let container = document.getElementById('canvasContainer');
+let clock = new THREE.Clock();
+let paused = false;
+let player = { pos:new THREE.Vector3(0,8,0), vel:new THREE.Vector3(), yaw:0, pitch:0, height:1.7, grounded:false, swinging:false, rope:null, hp:100, energy:100, score:0 };
+const world = { buildings:[], attachables:[] };
+let keys = {};
+let mouse = {down:false};
+const GRAVITY = -24.0;
+const WALK_ACCEL = 30.0;
+const MAX_WALK_SPEED = 7.0;
+const SPRINT_MULT = 1.6;
+const JUMP_SPEED = 7.0;
+let MAX_ATTACH_DIST = chosenDifficulty.attachRange;
+
+/* ---------- Three init & city gen ---------- */
+function initThree(){
+  renderer = new THREE.WebGLRenderer({antialias:true});
+  renderer.setPixelRatio(window.devicePixelRatio);
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  container.appendChild(renderer.domElement);
+
+  scene = new THREE.Scene();
+  scene.fog = new THREE.FogExp2(0x89c7ff, 0.0022);
+
+  camera = new THREE.PerspectiveCamera(70, window.innerWidth/window.innerHeight, 0.1, 1000);
+  camera.position.copy(player.pos).add(new THREE.Vector3(0, player.height, 0));
+  scene.add(camera);
+
+  const amb = new THREE.AmbientLight(0xcfefff, 0.6); scene.add(amb);
+  const dir = new THREE.DirectionalLight(0xffffff, 0.8); dir.position.set(12,30,8); scene.add(dir);
+
+  const groundGeo = new THREE.PlaneGeometry(1200,1200);
+  const groundMat = new THREE.MeshStandardMaterial({color:0x2b6d2b});
+  const ground = new THREE.Mesh(groundGeo, groundMat); ground.rotation.x = -Math.PI/2; ground.position.y = 0; ground.receiveShadow = true; scene.add(ground);
+
+  const skyGeo = new THREE.SphereGeometry(500, 16, 12);
+  const skyMat = new THREE.MeshBasicMaterial({color:0x9be0ff, side:THREE.BackSide});
+  const sky = new THREE.Mesh(skyGeo, skyMat); sky.position.set(0,50,0); scene.add(sky);
+
+  window.addEventListener('resize', onResize);
+}
+
+function generateCity(){
+  world.buildings.length = 0; world.attachables.length = 0;
+  const boxMat = new THREE.MeshStandardMaterial({color:0x6b8cff, roughness:0.7, metalness:0.05});
+  const rooftopMat = new THREE.MeshStandardMaterial({color:0xdbeeff, emissive:0x335577, roughness:0.6});
+  const rng = (a,b)=> a + Math.random()*(b-a);
+  const grid = 10;
+  const extent = 30;
+  for(let i=-extent;i<=extent;i++){
+    for(let j=-extent;j<=extent;j++){
+      if(Math.abs(i) < 2 && Math.abs(j) < 2) continue;
+      const w = rng(3,8), d = rng(3,8), h = rng(4, Math.max(6, 24 - (Math.abs(i)+Math.abs(j))*0.6));
+      const bx = i * (grid + Math.random()*6), bz = j * (grid + Math.random()*6);
+      const geo = new THREE.BoxGeometry(w, h, d);
+      const m = boxMat.clone();
+      m.color = new THREE.Color().setHSL(0.58 + Math.random()*0.06, 0.35, 0.45 + Math.random()*0.08);
+      const mesh = new THREE.Mesh(geo, m); mesh.position.set(bx, h/2, bz);
+      scene.add(mesh); world.buildings.push(mesh);
+      if(Math.random() > 0.35){ const attach = new THREE.Vector3(bx + rng(-w*0.35, w*0.35), h + 0.05, bz + rng(-d*0.35, d*0.35)); world.attachables.push({pos:attach, parent:mesh}); }
+    }
+  }
+  for(let k=0;k<4;k++){
+    const w=8+Math.random()*10, d=8+Math.random()*10, h=28+Math.random()*30;
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(w,h,d), rooftopMat.clone());
+    mesh.position.set((k-1.5)*(grid*3), h/2, -40 + Math.random()*80);
+    scene.add(mesh);
+    world.buildings.push(mesh);
+    world.attachables.push({pos:new THREE.Vector3(mesh.position.x, h+0.1, mesh.position.z), parent:mesh});
+  }
+}
+
+/* ---------- Input & pointer lock ---------- */
+let pointerLocked = false;
+function setupPointerLock(){
+  const el = renderer.domElement;
+  el.requestPointerLock = el.requestPointerLock || el.mozRequestPointerLock;
+  document.exitPointerLock = document.exitPointerLock || document.mozExitPointerLock;
+  document.addEventListener('pointerlockchange', ()=> { pointerLocked = (document.pointerLockElement === el); });
+  document.addEventListener('mousemove', e=>{
+    if(!pointerLocked) return;
+    const movementX = e.movementX || 0, movementY = e.movementY || 0;
+    player.yaw -= movementX * 0.0022; player.pitch -= movementY * 0.0022;
+    player.pitch = Math.max(-Math.PI/2 + 0.05, Math.min(Math.PI/2 - 0.05, player.pitch));
+  });
+  window.addEventListener('mousedown', e=> { if(e.button === 0) mouse.down = true; });
+  window.addEventListener('mouseup', e=> { if(e.button === 0) mouse.down = false; if(player.swinging) releaseRope(); });
+  window.addEventListener('keydown', e=> {
+    keys[e.key.toLowerCase()] = true;
+    if(e.key === 'r' || e.key === 'R') location.reload();
+    if(e.key === ' '){ if(player.grounded){ player.vel.y = JUMP_SPEED; player.grounded = false; } }
+    if(e.key === 'Escape'){ togglePause(); }
+    if(['1','2','3','4'].includes(e.key) && document.getElementById('overlay').style.display !== 'none'){ if(e.key==='1') selectDifficulty('Easy'); if(e.key==='2') selectDifficulty('Normal'); if(e.key==='3') selectDifficulty('Hard'); if(e.key==='4') selectDifficulty('Extreme'); }
+    if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(e.key)) e.preventDefault();
+  });
+  window.addEventListener('keyup', e=> { keys[e.key.toLowerCase()] = false; });
+}
+
+/* ---------- Raycast attach ---------- */
+const raycaster = new THREE.Raycaster();
+function tryAttachWeb(){
+  const origin = camera.position.clone();
+  const dir = new THREE.Vector3(0,0,-1).applyQuaternion(camera.quaternion).normalize();
+  raycaster.set(origin, dir);
+  const intersects = raycaster.intersectObjects(world.buildings, false);
+  for(const it of intersects){
+    const distance = it.distance;
+    if(distance <= MAX_ATTACH_DIST){ const pivot = it.point.clone(); createRope(pivot, distance); showSubtitle("Web attached.", 1400); return true; }
+    break;
+  }
+  for(const a of world.attachables){
+    const dist = a.pos.clone().sub(camera.position).length();
+    if(dist <= MAX_ATTACH_DIST){ createRope(a.pos.clone(), dist); showSubtitle("Web attached to rooftop.", 1400); return true; }
+  }
+  showHUDMessage('No attach point in range', 1000);
+  showSubtitle('No attach point in range', 1400);
+  return false;
+}
+
+/* ---------- Rope ---------- */
+let ropeLine = null;
+function createRope(pivot, length){
+  player.swinging = true; player.rope = {pivot: pivot.clone(), length: length};
+  if(ropeLine) scene.remove(ropeLine);
+  const geom = new THREE.BufferGeometry().setFromPoints([pivot, camera.position.clone()]);
+  const mat = new THREE.LineBasicMaterial({color:0x9fe6ff, linewidth:2});
+  ropeLine = new THREE.Line(geom, mat); scene.add(ropeLine);
+  player.vel.y += 0.2;
+}
+function updateRopeVisual(){ if(!player.swinging || !ropeLine) return; const pts=[player.rope.pivot.clone(), camera.position.clone()]; ropeLine.geometry.setFromPoints(pts); }
+function releaseRope(){ if(!player.swinging) return; const fwd = new THREE.Vector3(0,0,-1).applyQuaternion(camera.quaternion).normalize(); const boost = 6.0; player.vel.addScaledVector(fwd, boost); player.swinging = false; player.rope = null; if(ropeLine){ scene.remove(ropeLine); ropeLine = null; } showSubtitle('Released web.', 900); }
+
+/* ---------- Drones & projectiles ---------- */
+const drones = [];
+const projGroup = [];
+function spawnDrones(count){
+  // create or remove to reach count
+  while(drones.length < count){
+    const dmesh = new THREE.Mesh(new THREE.SphereGeometry(0.6,10,8), new THREE.MeshStandardMaterial({color:0x222222, emissive:0x224477}));
+    const rx = (Math.random()*80 - 40), rz = (Math.random()*80 - 40);
+    dmesh.position.set(rx, 12 + Math.random()*6, rz);
+    scene.add(dmesh);
+    const baseShoot = randRange(chosenDifficulty.droneShootInterval[0], chosenDifficulty.droneShootInterval[1]);
+    drones.push({mesh:dmesh, baseY:dmesh.position.y, t:Math.random()*10, shootTimer: baseShoot});
+  }
+  while(drones.length > count){
+    const d = drones.pop();
+    if(d && d.mesh) scene.remove(d.mesh);
+  }
+}
+
+function updateDrones(dt){
+  for(const d of drones){
+    d.t += dt;
+    d.mesh.position.y = d.baseY + Math.sin(d.t*1.2)*0.8;
+    d.mesh.position.x += Math.cos(d.t*0.4) * 0.08;
+    d.mesh.position.z += Math.sin(d.t*0.5) * 0.08;
+    d.shootTimer -= dt;
+    if(d.shootTimer <= 0){
+      d.shootTimer = randRange(chosenDifficulty.droneShootInterval[0], chosenDifficulty.droneShootInterval[1]);
+      const origin = d.mesh.position.clone();
+      const dir = player.pos.clone().add(new THREE.Vector3(0,player.height,0)).sub(origin).normalize();
+      const v = dir.multiplyScalar(12.0);
+      const m = new THREE.Mesh(new THREE.SphereGeometry(0.12,8,6), new THREE.MeshStandardMaterial({color:0xffccaa, emissive:0xffaaaa}));
+      scene.add(m);
+      projGroup.push({mesh:m, pos:origin.clone(), vel:v, life:5.0, owner:'drone', damage: chosenDifficulty.projectileDamage});
+    }
+  }
+}
+
+function updateProjectiles(dt){
+  for(let i=projGroup.length-1;i>=0;i--){
+    const p = projGroup[i];
+    p.vel.y += GRAVITY * dt * 0.25;
+    p.pos.addScaledVector(p.vel, dt);
+    p.mesh.position.copy(p.pos);
+    p.life -= dt;
+    if(p.pos.y <= 0.4 || p.life <= 0){ scene.remove(p.mesh); projGroup.splice(i,1); continue; }
+    const playerCenter = player.pos.clone().add(new THREE.Vector3(0, player.height*0.5, 0));
+    if(p.pos.distanceTo(playerCenter) < 0.9){
+      scene.remove(p.mesh); projGroup.splice(i,1);
+      player.hp = Math.max(0, player.hp - (p.damage || 8));
+      showHUDMessage('-' + (p.damage || 8) + ' HP', 900);
+      showSubtitle('You were hit!', 1100);
+    }
+  }
+}
+
+/* ---------- Swing physics ---------- */
+function stepSwingPhysics(dt){
+  if(!player.swinging || !player.rope) return;
+  const pivot = player.rope.pivot; const L = player.rope.length;
+  player.vel.y += GRAVITY * dt;
+  player.pos.addScaledVector(player.vel, dt);
+  const r = player.pos.clone().sub(pivot);
+  const currentDist = r.length();
+  if(currentDist === 0) return;
+  const correction = r.multiplyScalar((L - currentDist)/currentDist);
+  player.pos.add(correction);
+  const radial = player.pos.clone().sub(pivot).normalize();
+  const vr = radial.clone().multiplyScalar(player.vel.dot(radial));
+  player.vel.sub(vr);
+  const forward = new THREE.Vector3(0,0,-1).applyQuaternion(camera.quaternion).setY(0).normalize();
+  const right = new THREE.Vector3().crossVectors(new THREE.Vector3(0,1,0), forward).normalize();
+  const tangent = new THREE.Vector3().crossVectors(radial, new THREE.Vector3(0,1,0)).normalize();
+  let pump = 0;
+  if(keys['w'] || keys['arrowup']) pump += 1;
+  if(keys['s'] || keys['arrowdown']) pump -= 0.6;
+  const pumpForce = 10.0;
+  if(Math.abs(pump) > 0.001) player.vel.addScaledVector(tangent, pump * pumpForce * dt);
+  if(keys['a'] || keys['arrowleft']) player.vel.addScaledVector(right, -4.0 * dt);
+  if(keys['d'] || keys['arrowright']) player.vel.addScaledVector(right,  4.0 * dt);
+  camera.position.copy(player.pos).add(new THREE.Vector3(0, player.height, 0));
+  updateRopeVisual();
+}
+
+/* ---------- Walking physics ---------- */
+function stepPlayerPhysics(dt){
+  if(player.swinging) return;
+  const forward = new THREE.Vector3(0,0,-1).applyQuaternion(camera.quaternion); forward.y=0; forward.normalize();
+  const right = new THREE.Vector3().crossVectors(forward, new THREE.Vector3(0,1,0));
+  let wish = new THREE.Vector3();
+  if(keys['w'] || keys['arrowup']) wish.add(forward);
+  if(keys['s'] || keys['arrowdown']) wish.sub(forward);
+  if(keys['a'] || keys['arrowleft']) wish.sub(right);
+  if(keys['d'] || keys['arrowright']) wish.add(right);
+  if(wish.length() > 0) wish.normalize();
+  const sprint = keys['shift'] ? SPRINT_MULT : 1.0;
+  const target = wish.multiplyScalar(MAX_WALK_SPEED * sprint);
+  const accel = new THREE.Vector3().subVectors(target, player.vel);
+  const accelLimit = WALK_ACCEL * dt;
+  if(accel.length() > accelLimit) accel.setLength(accelLimit);
+  player.vel.add(accel);
+  player.vel.y += GRAVITY * dt;
+  player.pos.addScaledVector(player.vel, dt);
+  if(player.pos.y <= 0.0){ player.pos.y = 0.0; player.vel.y = Math.max(0, player.vel.y); player.grounded = true; } else player.grounded = false;
+  const hv = new THREE.Vector3(player.vel.x, 0, player.vel.z);
+  const hs = hv.length();
+  if(hs > MAX_WALK_SPEED * sprint){ hv.setLength(MAX_WALK_SPEED * sprint); player.vel.x = hv.x; player.vel.z = hv.z; }
+  camera.position.copy(player.pos).add(new THREE.Vector3(0, player.height, 0));
+}
+
+/* ---------- Camera ---------- */
+function updateCameraOrientation(){
+  const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(player.pitch, player.yaw, 0, 'YXZ'));
+  camera.quaternion.copy(q);
+}
+
+/* ---------- HUD helpers ---------- */
+let hudTimer = null;
+function showHUDMessage(txt, ms=1200){
+  const t = document.getElementById('tips'); const prev = t.textContent; t.textContent = txt; clearTimeout(hudTimer); hudTimer = setTimeout(()=> t.textContent = prev, ms);
+}
+
+/* ---------- Main loop ---------- */
+function animate(){
+  const dt = Math.min(0.05, clock.getDelta());
+  // still render but skip updates when paused
+  if(!paused){
+    if(mouse.down && !player.swinging){ if(!mouse._attachedTry){ mouse._attachedTry = true; tryAttachWeb(); } }
+    if(!mouse.down) mouse._attachedTry = false;
+    if(player.swinging) stepSwingPhysics(dt); else stepPlayerPhysics(dt);
+    updateDrones(dt); updateProjectiles(dt);
+    document.getElementById('hpFill').style.width = (player.hp / chosenDifficulty.playerHP * 100) + '%';
+    document.getElementById('enFill').style.width = (player.energy / chosenDifficulty.playerEnergy * 100) + '%';
+    document.getElementById('score').textContent = player.score.toString();
+  }
+  updateCameraOrientation();
+  renderer.render(scene, camera);
+  requestAnimationFrame(animate);
+}
+
+/* ---------- Utility ---------- */
+function randRange(a,b){ return a + Math.random()*(b-a); }
+function updateHUDBadge(){
+  const b = document.getElementById('hudDiffBadge');
+  b.textContent = chosenDifficulty.name;
+  b.className = 'badge ' + (chosenDifficulty.name.toLowerCase());
+  document.getElementById('hudBadge').textContent = chosenDifficulty.name;
+  document.getElementById('hudBadge').className = 'badge ' + (chosenDifficulty.name.toLowerCase());
+}
+
+/* ---------- Audio (calm pad) ---------- */
+let audioCtx, masterGain, padNodes = [];
+function audioInit(){
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  masterGain = audioCtx.createGain(); masterGain.gain.value = 0.0; masterGain.connect(audioCtx.destination);
+  const chord = [0, 3, 7]; const baseFreq = 110;
+  for(let i=0;i<chord.length;i++){
+    const oscA = audioCtx.createOscillator(), oscB = audioCtx.createOscillator();
+    oscA.type = 'sine'; oscB.type = 'sine';
+    oscA.detune.value = (Math.random()*12-6); oscB.detune.value = (Math.random()*12-6) + 6;
+    const gainNode = audioCtx.createGain(); gainNode.gain.value = 0.0;
+    const filter = audioCtx.createBiquadFilter(); filter.type='lowpass'; filter.frequency.value = 800 + Math.random()*600;
+    oscA.frequency.value = baseFreq * Math.pow(2, chord[i]/12); oscB.frequency.value = baseFreq * Math.pow(2, chord[i]/12) * 2;
+    oscA.connect(gainNode); oscB.connect(gainNode);
+    gainNode.connect(filter); filter.connect(masterGain);
+    oscA.start(); oscB.start();
+    padNodes.push({oscA, oscB, gain:gainNode, filter});
+    (function modulate(node){ let t=0; function m(){ t+=0.002; node.filter.frequency.value = 600 + Math.sin(t*0.23 + Math.random())*200; requestAnimationFrame(m); } m(); })(padNodes[padNodes.length-1]);
+  }
+}
+function audioStart(){ if(!audioCtx) audioInit(); if(audioCtx.state === 'suspended') audioCtx.resume(); padNodes.forEach((n,idx)=>{ n.gain.gain.cancelScheduledValues(audioCtx.currentTime); n.gain.gain.linearRampToValueAtTime(0.12/(idx+1), audioCtx.currentTime + 2.2); }); masterGain.gain.cancelScheduledValues(audioCtx.currentTime); masterGain.gain.linearRampToValueAtTime(0.9, audioCtx.currentTime + 2.2); }
+
+/* ---------- Pause menu logic ---------- */
+function togglePause(){
+  paused = !paused;
+  document.getElementById('pauseMenu').style.display = paused ? 'flex' : 'none';
+  // when paused release pointer lock for menu navigation (optional). We keep pointer locked but you can still press Resume to get back.
+  if(paused){ showSubtitle('Game paused', 900); } else { showSubtitle('Resumed', 900); }
+}
+
+/* Apply tuning (applies current tuning panel values) */
+function applyTuningFromUI(){
+  const newDroneCount = parseInt(document.getElementById('tDroneCountVal').value);
+  const newProjDmg = parseFloat(document.getElementById('tProjDmgVal').value);
+  const newAttach = parseFloat(document.getElementById('tAttachRangeVal').value);
+  const newPlayerHP = parseFloat(document.getElementById('tPlayerHPVal').value);
+  const newEnergyRegen = parseFloat(document.getElementById('tEnergyRegenVal').value);
+
+  // update chosenDifficulty object to persist if player picks Apply
+  chosenDifficulty.droneCount = newDroneCount;
+  chosenDifficulty.projectileDamage = newProjDmg;
+  chosenDifficulty.attachRange = newAttach;
+  chosenDifficulty.playerHP = newPlayerHP;
+  chosenDifficulty.playerEnergy = Math.max(20, chosenDifficulty.playerEnergy); // keep stable
+  chosenDifficulty.energyRegenMultiplier = newEnergyRegen;
+
+  // apply live:
+  MAX_ATTACH_DIST = newAttach;
+  document.getElementById('rangeLabel').textContent = MAX_ATTACH_DIST + "m";
+  // adjust player max HP & current HP proportionally (we keep current HP the same fraction)
+  const oldMax = player.hp > 0 ? player.hp : newPlayerHP;
+  const oldRatio = (player.hp / (oldMax || newPlayerHP));
+  player.hp = Math.min(newPlayerHP, Math.max(6, Math.round(newPlayerHP * (oldRatio || 1))));
+  // regen uses setInterval; we'll clear and set a new regen with multiplier
+  if(window._energyRegenInterval) clearInterval(window._energyRegenInterval);
+  window._energyRegenInterval = setInterval(()=>{ player.energy = Math.min(chosenDifficulty.playerEnergy, player.energy + (3 * chosenDifficulty.energyRegenMultiplier)); }, 500);
+  // adjust drones
+  spawnDrones(newDroneCount);
+  // adjust existing projectile damages
+  for(const p of projGroup) p.damage = newProjDmg;
+  updateHUDBadge();
+  showSubtitle(`Tuning applied: Drones ${newDroneCount}, Damage ${newProjDmg}, Range ${newAttach}m`, 2400);
+}
+
+/* ---------- Helper: select difficulty (preset) ---------- */
+function selectDifficulty(name){
+  if(!DIFFICULTIES[name]) return;
+  chosenDifficulty = JSON.parse(JSON.stringify(DIFFICULTIES[name])); // copy so tuning won't mutate presets
+  // apply immediately
+  MAX_ATTACH_DIST = chosenDifficulty.attachRange;
+  document.getElementById('rangeLabel').textContent = MAX_ATTACH_DIST + "m";
+  // player hp / energy set to preset max and current clamped
+  player.hp = Math.min(chosenDifficulty.playerHP, Math.max(6, Math.round(chosenDifficulty.playerHP * 0.9)));
+  player.energy = Math.min(chosenDifficulty.playerEnergy, chosenDifficulty.playerEnergy);
+  // spawn drones according to preset
+  spawnDrones(chosenDifficulty.droneCount);
+  // change projectiles damage for new projectiles
+  for(const p of projGroup) p.damage = chosenDifficulty.projectileDamage;
+  updateHUDBadge();
+  // reflect on UI sliders default values
+  document.getElementById('tDroneCount').value = chosenDifficulty.droneCount;
+  document.getElementById('tDroneCountVal').value = chosenDifficulty.droneCount;
+  document.getElementById('tProjDmg').value = chosenDifficulty.projectileDamage;
+  document.getElementById('tProjDmgVal').value = chosenDifficulty.projectileDamage;
+  document.getElementById('tAttachRange').value = chosenDifficulty.attachRange;
+  document.getElementById('tAttachRangeVal').value = chosenDifficulty.attachRange;
+  document.getElementById('tPlayerHP').value = chosenDifficulty.playerHP;
+  document.getElementById('tPlayerHPVal').value = chosenDifficulty.playerHP;
+  document.getElementById('tEnergyRegen').value = chosenDifficulty.energyRegenMultiplier;
+  document.getElementById('tEnergyRegenVal').value = chosenDifficulty.energyRegenMultiplier;
+
+  // reset energy regen interval
+  if(window._energyRegenInterval) clearInterval(window._energyRegenInterval);
+  window._energyRegenInterval = setInterval(()=>{ player.energy = Math.min(chosenDifficulty.playerEnergy, player.energy + (3 * chosenDifficulty.energyRegenMultiplier)); }, 500);
+
+  showSubtitle(`Difficulty set to ${chosenDifficulty.name}`, 1600);
+}
+
+/* ---------- Start & wiring ---------- */
+function startDemo(startMusic=true){
+  initThree();
+  generateCity();
+  setupPointerLock();
+  // init player stats from chosenDifficulty
+  player.hp = Math.min(chosenDifficulty.playerHP, chosenDifficulty.playerHP);
+  player.energy = Math.min(chosenDifficulty.playerEnergy, chosenDifficulty.playerEnergy);
+  player.score = 0;
+  MAX_ATTACH_DIST = chosenDifficulty.attachRange;
+  document.getElementById('rangeLabel').textContent = MAX_ATTACH_DIST + "m";
+  spawnDrones(chosenDifficulty.droneCount);
+  // energy regen
+  if(window._energyRegenInterval) clearInterval(window._energyRegenInterval);
+  window._energyRegenInterval = setInterval(()=>{ player.energy = Math.min(chosenDifficulty.playerEnergy, player.energy + (3 * chosenDifficulty.energyRegenMultiplier)); }, 500);
+  updateHUDBadge();
+
+  // sun
+  const sun = new THREE.Mesh(new THREE.SphereGeometry(2.5, 12, 8), new THREE.MeshBasicMaterial({color:0xfff7c3}));
+  sun.position.set(80, 80, -60); scene.add(sun);
+
+  // Play button wiring
+  const el = renderer.domElement;
+  document.getElementById('playBtn').addEventListener('click', ()=>{
+    document.getElementById('overlay').style.display = 'none';
+    el.requestPointerLock();
+    if(startMusic) audioStart();
+    showSubtitle(`Difficulty: ${chosenDifficulty.name}. Find a rooftop and swing.`, 3800);
+    clock.startTime = performance.now();
+    requestAnimationFrame(animate);
+  });
+  document.getElementById('playNoMusic').addEventListener('click', ()=>{
+    document.getElementById('overlay').style.display = 'none';
+    el.requestPointerLock();
+    showSubtitle(`Difficulty: ${chosenDifficulty.name}. Music off.`, 2400);
+    requestAnimationFrame(animate);
+  });
+
+  // Pause UI buttons
+  document.getElementById('resumeBtn').addEventListener('click', ()=> togglePause());
+  document.getElementById('restartBtn').addEventListener('click', ()=> location.reload());
+  document.getElementById('applyTuning').addEventListener('click', ()=> applyTuningFromUI());
+
+  // difficulty presets in pause menu
+  document.getElementById('pDiffEasy').addEventListener('click', ()=> selectDifficulty('Easy'));
+  document.getElementById('pDiffNormal').addEventListener('click', ()=> selectDifficulty('Normal'));
+  document.getElementById('pDiffHard').addEventListener('click', ()=> selectDifficulty('Hard'));
+  document.getElementById('pDiffXtreme').addEventListener('click', ()=> selectDifficulty('Extreme'));
+
+  // overlay difficulty buttons (initial)
+  document.getElementById('diffEasy').addEventListener('click', ()=> selectDifficulty('Easy'));
+  document.getElementById('diffNormal').addEventListener('click', ()=> selectDifficulty('Normal'));
+  document.getElementById('diffHard').addEventListener('click', ()=> selectDifficulty('Hard'));
+  document.getElementById('diffXtreme').addEventListener('click', ()=> selectDifficulty('Extreme'));
+
+  // tuning slider two-way binding
+  const bindRangeNumber = (rngId, numId) => {
+    const r=document.getElementById(rngId), n=document.getElementById(numId);
+    r.addEventListener('input', ()=> n.value = r.value);
+    n.addEventListener('change', ()=> r.value = n.value);
+  };
+  bindRangeNumber('tDroneCount','tDroneCountVal');
+  bindRangeNumber('tProjDmg','tProjDmgVal');
+  bindRangeNumber('tAttachRange','tAttachRangeVal');
+  bindRangeNumber('tPlayerHP','tPlayerHPVal');
+  bindRangeNumber('tEnergyRegen','tEnergyRegenVal');
+
+  // initialize tuning UI to chosenDifficulty
+  selectDifficulty(chosenDifficulty.name);
+
+  // subtitle log initial
+  subtitleLog.innerHTML = `<div><strong>Session started:</strong> Difficulty ${chosenDifficulty.name}</div>`;
+
+  // crosshair pulse
+  (function crossPulse(){ const c=document.getElementById('cross'); let t=0; function f(){ t+=0.02; c.style.opacity=0.7+0.3*Math.sin(t); requestAnimationFrame(f); } f(); })();
+}
+
+/* ---------- Resize ---------- */
+function onResize(){ if(!camera || !renderer) return; camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); }
+
+/* ---------- Start the demo ---------- */
+initThree();
+generateCity();
+setupPointerLock();
+startDemo(true);
+
+/* expose some useful toggles for controller Start button integration (optional) */
+window.togglePause = togglePause;
+window.selectDifficulty = selectDifficulty;
+window.applyTuningFromUI = applyTuningFromUI;
+</script>
+</body>
+</html>
